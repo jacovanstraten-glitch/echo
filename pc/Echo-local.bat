@@ -59,14 +59,7 @@ if exist "%CHROME%" (
   start "" msedge --app="%URL%" --window-size=1100,900
 )
 
-REM 4. Transcriber, in its own window (minimised once it is installed).
-if exist "%VPY%" if exist "%HOMEDIR%\installed.txt" if exist "%HOMEDIR%\config.json" (
-  start "Echo transcriber" /min cmd /c ""%~f0" transcriber"
-  exit /b
-)
-start "Echo transcriber" cmd /c ""%~f0" transcriber"
-exit /b
-
+REM 4. Transcriber, in this window. Leave it open (minimised is fine); close it to stop transcribing.
 :transcriber
 title Echo transcriber
 if not exist "%HOMEDIR%" mkdir "%HOMEDIR%"
