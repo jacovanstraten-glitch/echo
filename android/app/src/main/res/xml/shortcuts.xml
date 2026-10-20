@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="record" android:enabled="true" android:icon="@drawable/ic_shortcut_record"
+        android:shortcutShortLabel="@string/sc_record" android:shortcutLongLabel="@string/sc_record">
+        <intent android:action="io.github.jacovanstraten.echo.RECORD"
+            android:targetPackage="io.github.jacovanstraten.echo"
+            android:targetClass="io.github.jacovanstraten.echo.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="dictate" android:enabled="true" android:icon="@drawable/ic_shortcut_idea"
+        android:shortcutShortLabel="@string/sc_dictate" android:shortcutLongLabel="@string/sc_dictate">
+        <intent android:action="io.github.jacovanstraten.echo.DICTATE"
+            android:targetPackage="io.github.jacovanstraten.echo"
+            android:targetClass="io.github.jacovanstraten.echo.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="idea" android:enabled="true" android:icon="@drawable/ic_shortcut_idea"
+        android:shortcutShortLabel="@string/sc_idea" android:shortcutLongLabel="@string/sc_idea">
+        <intent android:action="io.github.jacovanstraten.echo.IDEA"
+            android:targetPackage="io.github.jacovanstraten.echo"
+            android:targetClass="io.github.jacovanstraten.echo.MainActivity" />
+    </shortcut>
+</shortcuts>

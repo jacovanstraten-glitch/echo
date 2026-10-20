@@ -1,0 +1,4 @@
+*.bat -text
+*.jks binary
+*.png binary
+*.woff2 binary

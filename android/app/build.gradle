@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+}
+
+def buildNumber = (System.getenv('VERSION_CODE') ?: '1') as int
+
+android {
+    namespace 'io.github.jacovanstraten.echo'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'io.github.jacovanstraten.echo'
+        minSdk 26
+        targetSdk 35
+        versionCode buildNumber
+        versionName "1.0.${buildNumber}"
+    }
+
+    signingConfigs {
+        release {
+            // The keystore is encrypted; its password is the KS_PASSWORD secret of this repository.
+            storeFile file('../release.jks')
+            storePassword System.getenv('KS_PASSWORD')
+            keyAlias 'echo'
+            keyPassword System.getenv('KS_PASSWORD')
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
+}

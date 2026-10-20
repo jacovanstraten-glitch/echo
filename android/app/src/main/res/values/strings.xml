@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sc_record">Record</string>
+    <string name="sc_idea">New idea</string>
+    <string name="sc_dictate">Dictate idea</string>
+</resources>
