@@ -254,22 +254,33 @@ async function uploadFile(folder, name, blob, {replace = false, ifMatch = null, 
     return r;
   }
   const s = await g("POST", `${itemRef(p)}/createUploadSession`, {body: {item: {"@microsoft.graph.conflictBehavior": cb}}, headers: ifMatch ? {"If-Match": ifMatch} : {}});
-  const CH = 320 * 1024 * 10; // 3.2 MB, a multiple of 320 KiB
-  let res = null;
-  for (let start = 0; start < blob.size; start += CH) {
+  return sendChunks(s.uploadUrl, blob, onProgress);
+}
+// Sends a file to an upload session in 3.2 MB parts. After a failed part it asks OneDrive how far it got
+// and continues from there, so a weak phone connection does not restart (or break) the upload.
+async function sendChunks(uploadUrl, blob, onProgress) {
+  const CH = 320 * 1024 * 10; // a multiple of 320 KiB, as OneDrive requires
+  let start = 0, fails = 0, last = "";
+  while (start < blob.size) {
     const end = Math.min(blob.size, start + CH);
-    let r = null;
-    for (let tryNo = 0; tryNo < 4; tryNo++) {
-      try { r = await fetch(s.uploadUrl, {method: "PUT", headers: {"Content-Range": `bytes ${start}-${end - 1}/${blob.size}`}, body: blob.slice(start, end)}); }
-      catch { r = null; }
-      if (r && (r.ok || r.status === 202)) break;
-      await sleep(1500 * (tryNo + 1));
-    }
-    if (!r || (!r.ok && r.status !== 202)) throw new GraphError(r ? r.status : 0, "Upload failed.", "upload");
-    if (r.status === 200 || r.status === 201) res = await r.json();
-    if (onProgress) onProgress(end, blob.size);
+    let r = null, part;
+    try { part = blob.slice(start, end); if (part.size !== end - start) throw new Error("short read"); }
+    catch (e) { throw new GraphError(0, "Upload failed: the recording could not be read on this device (" + (e.message || e.name) + ").", "read"); }
+    try { r = await fetch(uploadUrl, {method: "PUT", headers: {"Content-Range": `bytes ${start}-${end - 1}/${blob.size}`}, body: part}); }
+    catch (e) { r = null; last = (e && e.name === "NotReadableError") ? "the recording could not be read on this device" : "no connection"; if (e && e.name === "NotReadableError") throw new GraphError(0, "Upload failed: " + last + ".", "read"); }
+    if (r && (r.status === 200 || r.status === 201)) { if (onProgress) onProgress(blob.size, blob.size); return r.json(); }
+    if (r && r.status === 202) { start = end; fails = 0; if (onProgress) onProgress(end, blob.size); continue; }
+    if (r) { let m = ""; try { const j = await r.json(); m = j.error?.message || ""; } catch {} last = `HTTP ${r.status}${m ? ": " + m : ""}`; }
+    if (++fails > 5) throw new GraphError(r ? r.status : 0, `Upload failed (${last}).`, "upload");
+    await sleep(1500 * fails);
+    try { // where did OneDrive get to?
+      const st = await fetch(uploadUrl);
+      if (st.status === 404) throw new GraphError(404, "Upload failed: the upload expired. Try again.", "upload");
+      const j = await st.json(); const next = (j.nextExpectedRanges || [])[0];
+      if (next) start = Number(next.split("-")[0]) || 0;
+    } catch (e) { if (e instanceof GraphError) throw e; }
   }
-  return res;
+  throw new GraphError(0, "Upload failed (OneDrive did not confirm the file).", "upload");
 }
 const folderCache = new Map();
 async function ensureFolder(path) {
@@ -851,7 +862,7 @@ function statusHelp(e, st) {
   if (!st.wait) return "";
   if (!e.audio.uploaded) {
     const up = state.uploads[e.id];
-    if (up && up.error) return `<div class="notice"><span>Upload failed: ${esc(up.error)}. The recording is safe on this device.</span> <button class="btn" id="retry">Try again</button></div>`;
+    if (up && up.error) return `<div class="notice"><span>${esc(/^upload failed/i.test(up.error) ? up.error : "Upload failed: " + up.error)} The recording is safe on this device.</span> <button class="btn" id="retry">Try again</button></div>`;
     return `<p class="hint">The recording is safe on this device and is uploaded to OneDrive as soon as there is internet.</p>`;
   }
   const l = state.live[e.id];
@@ -1215,7 +1226,11 @@ async function importFiles(files) {
     const id = uid(), when = f.lastModified || Date.now();
     const base = f.name.replace(/\.[^.]+$/, ""), ext = (f.name.match(/\.[^.]+$/) || [".m4a"])[0].toLowerCase();
     const dur = await audioDuration(f);
-    await idb.set("audio", id, f);
+    // Keep our own copy: on Android a picked file can only be read for a short while.
+    let copy;
+    try { copy = new Blob([await f.arrayBuffer()], {type: f.type || "audio/mp4"}); }
+    catch { toast(`“${f.name}” could not be read. Try again.`); continue; }
+    await idb.set("audio", id, copy);
     putEntry({id, kind: "recording", createdAt: when, title: base, autoTitle: false, type: setting("lastType", "meeting"), category: "", tags: [], markers: [], lang: setting("defaultLang", "auto"),
       audio: {name: audioName(when, base, ext), duration: dur, size: f.size, mime: f.type || "audio/mp4", uploaded: false}});
   }
