@@ -26,13 +26,13 @@ HOME = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Ec
 CONFIG = os.path.join(HOME, "config.json")
 AUDIO_RE = re.compile(r"\.(m4a|mp3|wav|ogg|oga|opus|webm|aac|mp4|flac|amr|3gp|wma)$", re.I)
 LOCK_PORT = 47823
-ECHO_SUBFOLDER = ("Jaco - Persoonlijk", "Echo")  # must match "folder" in config.js of the app
+ECHO_SUBFOLDER = ("Echo",)  # must match "folder" in config.js of the app
 HOST = socket.gethostname()
 DEFAULTS = {
     "model": "large-v3-turbo",   # Whisper model; "small" is faster, "large-v3" is slower and a little more accurate
     "hf_token": "",              # Hugging Face token for speaker detection (pyannote)
     "diarization_model": "pyannote/speaker-diarization-community-1",
-    "folder": "",                # leave empty to use OneDrive\Jaco - Persoonlijk\Echo
+    "folder": "",                # leave empty to use OneDrive\Echo (the personal OneDrive)
     "threads": 0                 # 0 = use all CPU cores
 }
 
