@@ -18,10 +18,10 @@ Capture ideas and record conversations on your phone or PC. Recordings are turne
 
 | What | Where |
 | --- | --- |
-| Ideas, transcripts, answers, settings | `OneDrive\Echo\index.json` |
-| Audio | `OneDrive\Echo\Recordings\<date time title>.m4a` (or .webm, .ogg, …) |
+| Ideas, transcripts, answers, settings | `OneDrive\Jaco - Persoonlijk\Echo\index.json` |
+| Audio | `OneDrive\Jaco - Persoonlijk\Echo\Recordings\<date time title>.m4a` (or .webm, .ogg, …) |
 | Transcript per recording | next to the audio: `<same name>.transcript.json` |
-| Transcriber status | `OneDrive\Echo\transcriber.json` |
+| Transcriber status | `OneDrive\Jaco - Persoonlijk\Echo\transcriber.json` |
 | Transcriber program and settings | `%LOCALAPPDATA%\Echo` on the PC |
 
 The code in this repository contains no personal data and no secrets. The client ID in `config.js` is a public identifier (the same Microsoft app registration as Document Vault).

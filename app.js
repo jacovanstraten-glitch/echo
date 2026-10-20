@@ -272,9 +272,16 @@ async function ensureFolder(path) {
   if (folderCache.has(path)) return folderCache.get(path);
   try { const it = await g("GET", itemRef(path)); folderCache.set(path, it.id); return it.id; }
   catch (e) { if (e.status !== 404) throw e; }
-  if (!path) {
-    try { const it = await g("POST", "/me/drive/root/children", {body: {name: ROOT, folder: {}, "@microsoft.graph.conflictBehavior": "fail"}}); folderCache.set("", it.id); return it.id; }
-    catch (e) { if (e.status !== 409) throw e; const it = await g("GET", itemRef("")); folderCache.set("", it.id); return it.id; }
+  if (!path) { // the Echo folder itself, which may sit inside other folders ("Jaco - Persoonlijk/Echo")
+    const parts = ROOT.split("/");
+    let parentId = null;
+    for (let i = 0; i < parts.length; i++) {
+      const sub = encPath(parts.slice(0, i + 1).join("/"));
+      try { parentId = (await g("GET", `/me/drive/root:/${sub}:`)).id; continue; } catch (e) { if (e.status !== 404) throw e; }
+      try { parentId = (await g("POST", parentId ? `/me/drive/items/${parentId}/children` : "/me/drive/root/children", {body: {name: parts[i], folder: {}, "@microsoft.graph.conflictBehavior": "fail"}})).id; }
+      catch (e) { if (e.status !== 409) throw e; parentId = (await g("GET", `/me/drive/root:/${sub}:`)).id; }
+    }
+    folderCache.set("", parentId); return parentId;
   }
   const parts = path.split("/"), name = parts.pop(), parent = parts.join("/");
   try {
@@ -798,7 +805,7 @@ function openRecording(e) {
       ${e.audio.uploaded ? `<div class="two"><div class="field"><label for="lang">Language</label><select id="lang">${LANGS.map(([k, l]) => `<option value="${k}" ${k === (e.lang || "auto") ? "selected" : ""}>${l}</option>`).join("")}</select></div>
       <div class="field"><label for="nspk">Number of speakers</label><select id="nspk">${[[0, "Detect automatically"], [1, "1"], [2, "2"], [3, "3"], [4, "4"], [5, "5"], [6, "6 or more"]].map(([k, l]) => `<option value="${k}" ${k === (e.nspk || 0) ? "selected" : ""}>${l}</option>`).join("")}</select></div></div>
       <div class="btnrow"><button class="btn" id="retrans">${ICON.redo} Transcribe again</button>${segs.length ? `<button class="btn" id="dlTxt">${ICON.download} Transcript as text file</button>` : ""}</div>` : ""}
-      <p class="hint">Audio file: OneDrive › ${esc(ROOT)} › ${esc(RECS)} › ${esc(e.audio.name || "")}</p>
+      <p class="hint">Audio file: OneDrive › ${esc(ROOT.replace(/\//g, " › "))} › ${esc(RECS)} › ${esc(e.audio.name || "")}</p>
       <div class="btnrow"><button class="btn danger" id="del">${ICON.trash} Delete recording</button></div></div></details>`,
     {onClose: () => saveMeta()});
   panel.dataset.id = e.id; panel.dataset.hasTranscript = segs.length ? "1" : "";
@@ -1276,7 +1283,7 @@ function openSettings() {
       <div class="btnrow"><a class="btn" href="pc/Echo.bat" download="Echo.bat">${ICON.download} Download Echo.bat</a></div>
       <p class="hint">Double-click <span class="kbd">Echo.bat</span> on the PC. It opens Echo in its own window and starts the transcriber next to it. The first start installs everything, which takes a while.</p></div>
     ${native() ? "" : `<div class="card"><h3>Android app</h3><p class="hint">Records with the screen locked, dictates, and takes audio shared from WhatsApp.</p><div class="btnrow"><a class="btn" href="${APK_URL}">${ICON.download} Download Echo for Android</a></div></div>`}
-    <div class="card"><h3>Account</h3><p class="hint">Signed in as ${esc(account && account.username)}. Everything is stored in OneDrive › ${esc(ROOT)}.</p>
+    <div class="card"><h3>Account</h3><p class="hint">Signed in as ${esc(account && account.username)}. Everything is stored in OneDrive › ${esc(ROOT.replace(/\//g, " › "))}.</p>
       <div class="btnrow"><button class="btn" id="signout">Sign out</button></div></div>`);
   panel.onchange = ev => {
     const id = ev.target.id;
@@ -1359,7 +1366,7 @@ function showSignIn(err = "") {
   const g0 = gate(`<h1>Echo</h1><p>Your ideas and recordings are stored in your own OneDrive. Sign in with your Microsoft account to continue.</p>
     ${err ? `<div class="notice">${esc(err)}</div>` : ""}
     <div class="btnrow"><button class="btn primary grow" id="signIn">Sign in with Microsoft</button></div>
-    <p class="hint">Everything is stored in the folder OneDrive › ${esc(ROOT)}.</p>`);
+    <p class="hint">Everything is stored in the folder OneDrive › ${esc(ROOT.replace(/\//g, " › "))}.</p>`);
   $("#signIn", g0).onclick = () => msalApp.loginRedirect({scopes: SCOPES, prompt: "select_account"});
 }
 async function start() {

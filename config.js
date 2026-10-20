@@ -4,6 +4,6 @@
 // Leave empty to enter an ID in the app on first start.
 window.ECHO_CONFIG = {
   clientId: "79c2e12a-db94-4d8e-975d-e0ce908dafd4",
-  // Folder in the root of your OneDrive (on the PC: C:\Users\<you>\OneDrive\Echo)
-  folder: "Echo"
+  // Folder in your OneDrive (on the PC: C:\Users\<you>\OneDrive\Jaco - Persoonlijk\Echo)
+  folder: "Jaco - Persoonlijk/Echo"
 };
