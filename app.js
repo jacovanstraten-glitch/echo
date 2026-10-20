@@ -131,7 +131,10 @@ const ACTION_RULE = `Write every action item on its own line in exactly this for
 const ROOT = ((window.ECHO_CONFIG && window.ECHO_CONFIG.folder) || "Echo").replace(/^\/+|\/+$/g, "");
 const RECS = "Recordings";
 const SCOPES = ["Files.ReadWrite"];
-const G = "https://graph.microsoft.com/v1.0";
+// On the PC Echo runs locally (Echo.bat starts a small server on this computer) and reads and writes the
+// OneDrive\Echo folder directly, without signing in. On the phone it talks to OneDrive over the internet.
+const LOCAL = /^(127\.0\.0\.1|localhost)$/.test(location.hostname);
+const G = LOCAL ? location.origin + "/graph/v1.0" : "https://graph.microsoft.com/v1.0";
 const REPO = "jacovanstraten-glitch/echo";
 const APK_URL = `https://github.com/${REPO}/releases/latest/download/Echo.apk`;
 const AUDIO_RE = /\.(m4a|mp3|wav|ogg|oga|opus|webm|aac|mp4|flac|amr|3gp|wma)$/i;
@@ -201,6 +204,7 @@ async function signInAgain() {
 }
 const isBusy = () => !!recorder || Object.values(state.uploads).some(u => !u.error && !u.finished) || state.dirty;
 async function getToken() {
+  if (LOCAL) return "local";
   try { return (await msalApp.acquireTokenSilent({scopes: SCOPES, account})).accessToken; }
   catch (e) {
     console.warn("Silent sign-in failed", e);
@@ -1280,11 +1284,11 @@ function openSettings() {
       <div class="addrow"><input id="newCat" placeholder="New category"><button class="btn" id="addCat">Add</button></div></div>
     <div class="card"><h3>Transcriber on your PC</h3><p class="hint">${pcLine}</p>
       <p class="hint">Recordings are turned into text on your own PC with Whisper, and speakers are told apart with pyannote. Both are free and run offline.</p>
-      <div class="btnrow"><a class="btn" href="pc/Echo.bat" download="Echo.bat">${ICON.download} Download Echo.bat</a></div>
-      <p class="hint">Double-click <span class="kbd">Echo.bat</span> on the PC. It opens Echo in its own window and starts the transcriber next to it. The first start installs everything, which takes a while.</p></div>
+      <p class="hint">On the PC, start Echo with <span class="kbd">Echo.bat</span> in OneDrive › ${esc(ROOT)}. It opens Echo in its own window and starts the transcriber next to it.</p></div>
     ${native() ? "" : `<div class="card"><h3>Android app</h3><p class="hint">Records with the screen locked, dictates, and takes audio shared from WhatsApp.</p><div class="btnrow"><a class="btn" href="${APK_URL}">${ICON.download} Download Echo for Android</a></div></div>`}
-    <div class="card"><h3>Account</h3><p class="hint">Signed in as ${esc(account && account.username)}. Everything is stored in OneDrive › ${esc(ROOT.replace(/\//g, " › "))}.</p>
-      <div class="btnrow"><button class="btn" id="signout">Sign out</button></div></div>`);
+    ${LOCAL ? `<div class="card"><h3>Storage</h3><p class="hint">Running locally on this PC. Everything is read from and saved to OneDrive › ${esc(ROOT.replace(/\//g, " › "))} on this computer; OneDrive syncs it to your phone.</p></div>`
+    : `<div class="card"><h3>Account</h3><p class="hint">Signed in as ${esc(account && account.username)}. Everything is stored in OneDrive › ${esc(ROOT.replace(/\//g, " › "))}.</p>
+      <div class="btnrow"><button class="btn" id="signout">Sign out</button></div></div>`}`);
   panel.onchange = ev => {
     const id = ev.target.id;
     if (id === "outLang") setSetting("outLang", ev.target.value);
@@ -1371,10 +1375,13 @@ function showSignIn(err = "") {
 }
 async function start() {
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
-  if (!clientId()) return showSetup();
-  try { await initAuth(); }
-  catch (e) { console.error(e); return showSignIn("Sign-in did not work: " + (e.errorMessage || e.message || "unknown error") + ". If this keeps happening, check that the app registration has this page as redirect URI."); }
-  if (!account) return showSignIn();
+  if (LOCAL) account = {username: "this PC", local: true};
+  else {
+    if (!clientId()) return showSetup();
+    try { await initAuth(); }
+    catch (e) { console.error(e); return showSignIn("Sign-in did not work: " + (e.errorMessage || e.message || "unknown error") + ". If this keeps happening, check that the app registration has this page as redirect URI."); }
+    if (!account) return showSignIn();
+  }
   $("#gate").hidden = true; $("#app").hidden = false;
   render();
   await loadIndex();

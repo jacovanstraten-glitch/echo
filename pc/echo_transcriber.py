@@ -463,8 +463,16 @@ def main():
         log("The Echo transcriber is already running.")
         return
     cfg = load_config()
+    if "--folder" in sys.argv:  # Echo.bat passes the OneDrive\Echo folder it was started from
+        i = sys.argv.index("--folder")
+        if i + 1 < len(sys.argv) and os.path.isdir(sys.argv[i + 1]):
+            cfg["folder"] = sys.argv[i + 1].rstrip("\\/")
     if "--setup" in sys.argv or not cfg.get("asked_token"):
+        folder = cfg.get("folder")
         first_run(cfg)
+        cfg = load_config()
+        if folder:
+            cfg["folder"] = folder
         if "--setup" in sys.argv:
             return
     root = echo_folder(cfg)
