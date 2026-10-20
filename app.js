@@ -177,7 +177,9 @@ const state = {
   pc: null           // transcriber.json heartbeat
 };
 function emptyIndex() { return {app: "echo", version: 1, entries: {}, categories: [...DEFAULT_CATS], catsUpdatedAt: 0, settings: {}, settingsUpdatedAt: 0, updatedAt: 0}; }
-const entries = () => Object.values(state.index.entries).filter(e => !e.deleted);
+const allEntries = () => Object.values(state.index.entries).filter(e => !e.deleted);
+const entries = () => allEntries().filter(e => e.kind !== "action");        // ideas and recordings
+const standaloneActions = () => allEntries().filter(e => e.kind === "action"); // actions added by hand or by keyword
 const getEntry = id => { const e = state.index.entries[id]; return e && !e.deleted ? e : null; };
 const cats = () => state.index.categories && state.index.categories.length ? state.index.categories : DEFAULT_CATS;
 const setting = (k, d) => (state.index.settings && state.index.settings[k] !== undefined) ? state.index.settings[k] : d;
@@ -413,6 +415,7 @@ window.echoNative = ev => {
   if (ev.type === "imported" || ev.type === "stopped") syncNativeFiles();
   if (ev.type === "command" && account) {
     if (ev.cmd === "record" || ev.cmd === "show") { if (!panel.hidden && !recorder) { panelClose = null; closePanel(); } startRecorder("recording"); }
+    if (ev.cmd === "action") { if (recorder) return startRecorder(); if (!panel.hidden) closePanel(); openNewAction(true); }
     if (ev.cmd === "idea" || ev.cmd === "dictate") { if (recorder) return startRecorder(); if (!panel.hidden) closePanel(); newIdea({dictate: ev.cmd === "dictate"}); }
   }
 };
@@ -457,6 +460,48 @@ function toggleAction(e, lineNo, done) {
   const lines = String(e.summary || "").split("\n");
   lines[lineNo] = lines[lineNo].replace(/\[( |x|X)\]/, done ? "[x]" : "[ ]");
   e.summary = lines.join("\n"); putEntry(e, {quiet: true});
+}
+
+/* ================= actions by keyword ================= */
+// A sentence that starts with one of these words becomes an action, e.g. "Actie: Andre bellen over de prijs, vrijdag."
+const ACTION_WORDS = ["actiepunt", "actie", "action item", "action", "to do", "to-do", "todo", "taak", "niet vergeten", "reminder"];
+function keywordActions(text) {
+  const words = ACTION_WORDS.map(w => w.replace(/[-\s]/g, "[-\\s]?")).join("|");
+  const re = new RegExp(`^(?:(?:en|oké|okay|ok|oh|dus|and|so)[,.]?\\s+)?(?:${words})\\b\\s*[:,.;\\-–]?\\s*(.+)$`, "i");
+  const out = [];
+  for (const sentence of String(text || "").replace(/\s+/g, " ").split(/(?<=[.!?])\s+/)) {
+    const m = sentence.trim().match(re);
+    if (!m) continue;
+    let t = m[1].trim().replace(/[.!\s]+$/, "");
+    if (t.length < 3) continue;
+    out.push({text: t.charAt(0).toUpperCase() + t.slice(1), sentence: sentence.trim()});
+  }
+  return out;
+}
+function addAction(text, {sourceId = "", at = null} = {}) {
+  const a = {id: uid(), kind: "action", text: String(text).trim(), done: false, createdAt: Date.now(), sourceId, at};
+  if (!a.text) return null;
+  state.index.entries[a.id] = a; a.updatedAt = Date.now();
+  return a;
+}
+// Called once per transcript: picks up "Actie: …" sentences, with the time they were said.
+function extractKeywordActions(e) {
+  if (e.keywordActionsDone || !e.transcript || !e.transcript.segments) return 0;
+  e.keywordActionsDone = true;
+  let n = 0;
+  const segs = e.transcript.segments;
+  // Join consecutive parts of the same speaker, so a sentence split over two parts is still found.
+  const blocks = [];
+  for (const s of segs) {
+    const last = blocks[blocks.length - 1];
+    if (last && last.speaker === s.speaker) { last.text += " " + s.text; last.segs.push(s); } else blocks.push({speaker: s.speaker, text: s.text || "", segs: [s]});
+  }
+  for (const b of blocks) for (const k of keywordActions(b.text)) {
+    const head = norm(k.sentence).slice(0, 14);
+    const seg = b.segs.find(s => norm(s.text).includes(head)) || b.segs.find(s => head.startsWith(norm(s.text).trim().slice(0, 8))) || b.segs[0];
+    addAction(k.text, {sourceId: e.id, at: seg.start}); n++;
+  }
+  return n;
 }
 
 /* ================= status of a recording ================= */
@@ -523,7 +568,7 @@ function itemHtml(e, terms) {
   if (st && (e.kind === "recording" || st.wait)) pills.push(`<span class="st ${st.cls}">${esc(st.label)}</span>`);
   if (e.kind === "recording" && e.type && TYPES[e.type]) subs.push(TYPES[e.type].label);
   if (e.category) subs.push(e.category);
-  const open = actionsOf(e).filter(a => !a.done).length;
+  const open = actionsOf(e).filter(a => !a.done).length + standaloneActions().filter(a => a.sourceId === e.id && !a.done).length;
   if (open) pills.push(`<span class="st warn">${open} open action${open > 1 ? "s" : ""}</span>`);
   const sn = snippet(e, terms);
   return `<button class="item" data-id="${esc(e.id)}">
@@ -559,27 +604,57 @@ function render() {
   el.onclick = ev => { const b = ev.target.closest(".item"); if (b) openEntry(b.dataset.id); };
 }
 function renderActions(el) {
-  const groups = entries().map(e => ({e, acts: actionsOf(e)})).filter(x => x.acts.length).sort((a, b) => (b.e.createdAt || 0) - (a.e.createdAt || 0));
   const terms = norm(state.q).split(/\s+/).filter(Boolean);
   const showDone = !!lsGet("echo.showDone", false);
-  let h = `<div class="btnrow" style="padding-top:10px"><label class="toggle"><input type="checkbox" id="showDone" ${showDone ? "checked" : ""}> Show completed actions</label></div>`;
+  const match = t => !terms.length || terms.every(w => norm(t).includes(w));
+  const draft = ($("#newAction") || {}).value || "";
+  let h = `<div class="card addact"><div class="addrow"><input id="newAction" placeholder="Add an action, e.g. Call Andre about the price, Friday" value="${esc(draft)}" autocomplete="off">
+    <button class="btn" id="dictAction" title="Dictate an action">${ICON.mic}<span class="sr"> Dictate</span></button><button class="btn primary" id="addAction">Add</button></div>
+    <p class="hint">Or say “Actie: …” in a voice note or recording. Echo adds it here once the recording is transcribed.</p></div>
+    <div class="btnrow" style="padding-top:6px"><label class="toggle"><input type="checkbox" id="showDone" ${showDone ? "checked" : ""}> Show completed actions</label></div>`;
   let any = false;
+  const own = standaloneActions().filter(a => (showDone || !a.done) && match(a.text)).sort((a, b) => (a.done - b.done) || (b.createdAt - a.createdAt));
+  if (own.length) {
+    any = true;
+    h += `<div class="card actgroup"><h3>My actions</h3>${own.map(a => {
+      const src = a.sourceId && getEntry(a.sourceId);
+      return `<div class="actrow own ${a.done ? "done" : ""}"><input type="checkbox" data-aid="${esc(a.id)}" ${a.done ? "checked" : ""} aria-label="Done"><span>${highlight(a.text, terms)}${src ? `<button class="src" data-id="${esc(src.id)}" data-t="${a.at ?? ""}">from ${esc(src.title || (src.kind === "idea" ? "voice note" : "recording"))}${a.at != null ? " at " + tstamp(a.at) : ""}</button>` : `<small class="when">${esc(fmtDate(a.createdAt, false))}</small>`}</span><button class="iconbtn rm" data-rm="${esc(a.id)}" aria-label="Remove action" title="Remove">${ICON.x}</button></div>`;
+    }).join("")}</div>`;
+  }
+  const groups = entries().map(e => ({e, acts: actionsOf(e)})).filter(x => x.acts.length).sort((a, b) => (b.e.createdAt || 0) - (a.e.createdAt || 0));
   for (const {e, acts} of groups) {
-    const vis = acts.filter(a => (showDone || !a.done) && (!terms.length || terms.every(w => norm(a.text).includes(w))));
+    const vis = acts.filter(a => (showDone || !a.done) && match(a.text));
     if (!vis.length) continue;
     any = true;
-    h += `<div class="card actgroup"><button class="src" data-id="${esc(e.id)}">${esc(e.title || "Untitled")} · ${esc(fmtDate(e.createdAt, false))}</button>
+    h += `<div class="card actgroup"><button class="src" data-id="${esc(e.id)}">From Claude · ${esc(e.title || "Untitled")} · ${esc(fmtDate(e.createdAt, false))}</button>
       ${vis.map(a => `<label class="actrow ${a.done ? "done" : ""}"><input type="checkbox" data-id="${esc(e.id)}" data-line="${a.line}" ${a.done ? "checked" : ""}><span>${highlight(a.text, terms)}</span></label>`).join("")}</div>`;
   }
-  if (!any) h += `<div class="empty"><h2>No open actions</h2><p>Action items appear here when you paste Claude's answer into a recording or idea. Tick them off when they are done.</p></div>`;
+  if (!any) h += `<div class="empty"><h2>No open actions</h2><p>Type or dictate an action above, say “Actie: …” in a recording, or paste Claude's answer into a recording. Tick actions off when they are done.</p></div>`;
   el.innerHTML = h;
-  el.onclick = ev => { const s = ev.target.closest(".src"); if (s) openEntry(s.dataset.id); };
+  const input = $("#newAction", el);
+  const add = () => { const v = input.value.trim(); if (!v) return input.focus(); addAction(v); scheduleSave(); input.value = ""; render(); toast("Action added."); setTimeout(() => { const i = $("#newAction"); if (i) i.focus(); }, 0); };
+  input.onkeydown = ev => { if (ev.key === "Enter") { ev.preventDefault(); add(); } };
+  el.onclick = ev => {
+    const b = ev.target.closest("button"); if (!b) return;
+    if (b.id === "addAction") return add();
+    if (b.id === "dictAction") return dictateInto(input, b, {auto: true, onDone: v => { if (v.trim()) add(); }});
+    if (b.dataset.rm) { const a = state.index.entries[b.dataset.rm]; if (a) { a.deleted = true; a.updatedAt = Date.now(); scheduleSave(); render(); } return; }
+    if (b.classList.contains("src")) { openEntry(b.dataset.id); return; }
+  };
   el.onchange = ev => {
     if (ev.target.id === "showDone") { lsSet("echo.showDone", ev.target.checked); return render(); }
+    if (ev.target.dataset.aid) { const a = state.index.entries[ev.target.dataset.aid]; if (a) { a.done = ev.target.checked; a.doneAt = a.done ? Date.now() : null; a.updatedAt = Date.now(); scheduleSave(); setTimeout(render, 250); } return; }
     const cb = ev.target.closest("input[data-line]"); if (!cb) return;
     const e = getEntry(cb.dataset.id); if (!e) return;
     toggleAction(e, Number(cb.dataset.line), cb.checked); setTimeout(render, 250);
   };
+}
+
+function openNewAction(dictate) {
+  state.view = "actions"; state.cat = null; render();
+  const i = $("#newAction"); if (!i) return;
+  i.focus();
+  if (dictate) setTimeout(() => { const b = $("#dictAction"); if (b) b.click(); }, 200);
 }
 
 /* ================= panels ================= */
@@ -608,21 +683,21 @@ function openEntry(id) { const e = getEntry(id); if (!e) return; if (e.kind === 
 
 /* ================= dictation ================= */
 let recog = null;
-async function dictateInto(textarea, btn) {
+async function dictateInto(textarea, btn, {auto = false, onDone = null} = {}) {
   const lang = setting("dictLang", "nl-NL");
   if (native()) {
     btn.disabled = true;
     const p = waitNative("dictation");
     nativeCall("dictate", lang);
     const r = await p; btn.disabled = false;
-    if (r.text) { insertText(textarea, r.text); textarea.dispatchEvent(new Event("input", {bubbles: true})); }
+    if (r.text) { insertText(textarea, r.text); textarea.dispatchEvent(new Event("input", {bubbles: true})); if (onDone) onDone(textarea.value); }
     else if (r.error) toast(r.error);
     return;
   }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { toast("Dictation is not available in this browser. Use Chrome, or the Echo app on your phone."); return; }
   if (recog) { recog.stop(); return; }
-  recog = new SR(); recog.lang = lang; recog.continuous = true; recog.interimResults = true;
+  recog = new SR(); recog.lang = lang; recog.continuous = !auto; recog.interimResults = true;
   const before = textarea.value; let finalText = "";
   btn.classList.add("primary"); btn.lastChild.textContent = " Stop dictation";
   recog.onresult = ev => {
@@ -635,7 +710,7 @@ async function dictateInto(textarea, btn) {
     textarea.dispatchEvent(new Event("input", {bubbles: true}));
   };
   recog.onerror = ev => { if (ev.error !== "no-speech" && ev.error !== "aborted") toast("Dictation stopped: " + ev.error); };
-  recog.onend = () => { recog = null; btn.classList.remove("primary"); btn.lastChild.textContent = " Dictate"; };
+  recog.onend = () => { recog = null; btn.classList.remove("primary"); btn.lastChild.textContent = " Dictate"; if (onDone && finalText.trim()) onDone(textarea.value); };
   recog.start();
 }
 function insertText(ta, text) {
@@ -1276,8 +1351,9 @@ async function pollTranscripts() {
         if (j.duration && !e.audio.duration) e.audio.duration = Math.round(j.duration * 1000);
         if (e.kind === "idea" && !String(e.text || "").trim()) { e.text = transcriptText(e, {times: false}).replace(/^[^:]{1,30}:\s/gm, ""); if (e.autoTitle || !e.title) e.title = ideaTitle(e.text); }
         delete state.live[e.id];
+        const found = extractKeywordActions(e);
         putEntry(e);
-        toast(`“${e.title || "Recording"}” has been transcribed.`);
+        toast(`“${e.title || "Recording"}” has been transcribed${found ? ` and ${found} action${found > 1 ? "s were" : " was"} added` : ""}.`);
       } else state.live[e.id] = {status: j.status, progress: j.progress || 0, error: j.error || "", step: j.step || "", mod: it.lastModifiedDateTime};
     }
   } catch (err) { console.warn("transcript poll", err); }
@@ -1349,6 +1425,7 @@ document.addEventListener("keydown", ev => {
   if (ev.key === "Escape" && !panel.hidden) { window.echoBack(); return; }
   if (!account || !panel.hidden || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || "")) return;
   if (ev.key === "n") { ev.preventDefault(); newIdea(); }
+  if (ev.key === "a") { ev.preventDefault(); openNewAction(false); }
   if (ev.key === "/") { ev.preventDefault(); $("#q").focus(); }
 });
 // Long-press "New idea" on the phone starts dictation straight away.
@@ -1402,6 +1479,11 @@ async function start() {
   await loadIndex();
   lastRefresh = Date.now();
   await recoverWebRecording();
+  // Transcripts from before keyword actions existed: look for "Actie: …" once.
+  let older = 0, scanned = 0;
+  for (const e of entries()) if (e.transcript && e.transcript.segments && !e.keywordActionsDone) { older += extractKeywordActions(e); e.updatedAt = Date.now(); scanned++; }
+  if (scanned) { render(); scheduleSave(); }
+  if (older) toast(`${older} action${older > 1 ? "s" : ""} found in earlier recordings.`);
   await syncNativeFiles();
   const s = native() ? nativeCall("status") : null;
   if (s && s.state && s.state !== "idle") startRecorder();
@@ -1410,6 +1492,7 @@ async function start() {
   checkAndroidUpdate();
   if (location.hash === "#record") startRecorder("recording");
   if (location.hash === "#idea") newIdea();
+  if (location.hash === "#action") openNewAction(false);
 }
 start();
 })();

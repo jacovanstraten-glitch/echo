@@ -6,6 +6,12 @@
             android:targetPackage="io.github.jacovanstraten.echo"
             android:targetClass="io.github.jacovanstraten.echo.MainActivity" />
     </shortcut>
+    <shortcut android:shortcutId="action" android:enabled="true" android:icon="@drawable/ic_shortcut_action"
+        android:shortcutShortLabel="@string/sc_action" android:shortcutLongLabel="@string/sc_action">
+        <intent android:action="io.github.jacovanstraten.echo.ACTION"
+            android:targetPackage="io.github.jacovanstraten.echo"
+            android:targetClass="io.github.jacovanstraten.echo.MainActivity" />
+    </shortcut>
     <shortcut android:shortcutId="dictate" android:enabled="true" android:icon="@drawable/ic_shortcut_idea"
         android:shortcutShortLabel="@string/sc_dictate" android:shortcutLongLabel="@string/sc_dictate">
         <intent android:action="io.github.jacovanstraten.echo.DICTATE"

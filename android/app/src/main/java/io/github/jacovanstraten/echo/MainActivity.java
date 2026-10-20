@@ -178,6 +178,7 @@ public class MainActivity extends Activity {
         if ("io.github.jacovanstraten.echo.RECORD".equals(action)) cmd = "record";
         if ("io.github.jacovanstraten.echo.IDEA".equals(action)) cmd = "idea";
         if ("io.github.jacovanstraten.echo.DICTATE".equals(action)) cmd = "dictate";
+        if ("io.github.jacovanstraten.echo.ACTION".equals(action)) cmd = "action";
         if (RecorderService.ACTION_SHOW.equals(action)) cmd = "show";
         if (cmd == null) return;
         setIntent(new Intent());

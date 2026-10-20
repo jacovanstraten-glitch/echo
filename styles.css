@@ -326,3 +326,12 @@ audio{width:100%}
 .seg.small button{padding:6px 4px;font-size:13px}
 .kbd{font-family:var(--f-mono);font-size:12px;background:var(--sunk);border-radius:4px;padding:1px 5px}
 @media (min-width:900px){.top .wrap{grid-template-columns:auto minmax(320px,420px) 1fr}}
+
+.addact{gap:8px;margin-top:10px}
+.addact .addrow .btn{padding:9px 12px}
+.actrow.own{display:grid;grid-template-columns:18px 1fr 32px;gap:10px;align-items:start}
+.actrow.own .src{display:block;margin-top:2px;font-size:12.5px}
+.actrow .when{display:block;color:var(--muted);font-size:12.5px}
+.actrow .rm{width:30px;height:30px;border:0;background:transparent;color:var(--muted)}
+.actrow .rm svg{width:15px;height:15px}
+.actgroup h3{font-size:15px}

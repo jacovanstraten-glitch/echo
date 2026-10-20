@@ -3,4 +3,5 @@
     <string name="sc_record">Record</string>
     <string name="sc_idea">New idea</string>
     <string name="sc_dictate">Dictate idea</string>
+    <string name="sc_action">New action</string>
 </resources>
