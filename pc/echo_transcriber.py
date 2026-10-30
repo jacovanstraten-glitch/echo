@@ -279,6 +279,10 @@ def transcribe(job, models, heartbeat):
     audio = decode_audio(job.audio_path, sampling_rate=16000)
     duration = len(audio) / 16000.0
     log(f"{job.name}: {duration / 60:.1f} minutes of audio")
+    import numpy as np
+    if len(audio) == 0 or float(np.abs(audio).max()) < 1e-4:
+        raise RuntimeError("This recording is completely silent: the phone got no sound from the microphone "
+                           "(for example because a phone call was using it, or microphone access was switched off).")
 
     want_lang = (job.request.get("language") or "auto").lower()
     language = None if want_lang in ("", "auto") else want_lang

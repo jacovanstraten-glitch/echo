@@ -889,7 +889,7 @@ function openRecording(e) {
     ${claudeCard(e)}
     ${(e.markers || []).length ? `<div class="card"><h3>Marked moments</h3><div class="markers">${e.markers.map(m => `<button data-t="${m.t / 1000}"><span class="mono">${tstamp(m.t / 1000)}</span><span>${esc(m.note || "Marked")}</span></button>`).join("")}</div></div>` : ""}
     <div class="field"><label for="notes">My notes</label><textarea id="notes" rows="3" placeholder="Anything to remember about this conversation">${esc(e.notes || "")}</textarea></div>
-    ${segs.length ? `<div class="card"><h3>Transcript</h3><div class="transcript" id="transcript">${tr}</div></div>` : ""}
+    ${segs.length ? `<div class="card"><h3>Transcript</h3><div class="transcript" id="transcript">${tr}</div></div>` : e.transcript ? `<div class="notice">No speech was found in this recording. If it should contain speech, the phone probably did not get sound from the microphone (for example during a phone call).</div>` : ""}
     <details><summary>More</summary><div class="form" style="margin-top:12px">
       <div class="field"><label for="tags">Tags</label><input id="tags" placeholder="comma separated" value="${esc((e.tags || []).join(", "))}"></div>
       ${e.audio.uploaded ? `<div class="two"><div class="field"><label for="lang">Language</label><select id="lang">${LANGS.map(([k, l]) => `<option value="${k}" ${k === (e.lang || "auto") ? "selected" : ""}>${l}</option>`).join("")}</select></div>
@@ -1020,6 +1020,7 @@ function showRecorderPanel() {
         <div class="field"><label for="nspk">Speakers</label><select id="nspk">${[[0, "Detect"], [1, "1"], [2, "2"], [3, "3"], [4, "4"], [5, "5"], [6, "6+"]].map(([k, l]) => `<option value="${k}" ${k === (r.nspk || 0) ? "selected" : ""}>${l}</option>`).join("")}</select></div></div>`}
       </div>
       <div class="reclist" id="marks"></div>
+      <div class="notice" id="rsilent" hidden>No sound is coming in. Is the microphone in use by a call or another app, or is microphone access switched off in the quick settings?</div>
       <p class="hint" id="rhint">${r.mode === "native" ? "Recording continues when the screen locks or you switch apps." : "Keep this window open while recording."}</p>
     </div>
     <div class="reccontrols" id="rctl"></div></div>`, {raw: true});
@@ -1072,6 +1073,11 @@ function tick() {
     lv.push(lvl); lv.shift();
     $$("#meter span", panel).forEach((b, i) => b.style.height = (6 + Math.round(Math.min(1, Math.sqrt(lv[i]) * 1.2) * 42)) + "px");
     if (wasPaused !== recorder.pausedDrawn) { recorder.pausedDrawn = wasPaused; drawControls(); }
+    // Android hands an app pure silence when the microphone is taken (a phone call) or blocked: warn early.
+    if (active) { if (lvl > 0.0005) recorder.lastSound = performance.now(); else if (!recorder.lastSound) recorder.lastSound = performance.now(); }
+    const silent = active && recorder.lastSound && performance.now() - recorder.lastSound > 5000;
+    const sw = $("#rsilent", panel);
+    if (sw && sw.hidden === silent) { sw.hidden = !silent; if (silent) nativeCall("vibrate"); }
   }
   tickTimer = setTimeout(tick, 150);
 }
