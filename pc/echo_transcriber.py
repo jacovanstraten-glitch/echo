@@ -198,6 +198,21 @@ def assign_speakers(words, turns):
     return out
 
 
+def speaker_turns(out):
+    """(start, end, speaker) for each speaker turn, from any pyannote version's output."""
+    ann = None
+    for name in ("exclusive_speaker_diarization", "speaker_diarization"):  # pyannote 4: DiarizeOutput
+        a = getattr(out, name, None)
+        if a is not None and hasattr(a, "itertracks"):
+            ann = a
+            break
+    if ann is None and hasattr(out, "itertracks"):  # pyannote 3: an Annotation
+        ann = out
+    if ann is None:
+        raise RuntimeError(f"unexpected speaker detection result ({type(out).__name__})")
+    return sorted((t.start, t.end, spk) for t, _, spk in ann.itertracks(yield_label=True))
+
+
 def build_segments(whisper_segments, turns):
     out = []
     for seg in whisper_segments:
@@ -307,13 +322,18 @@ def transcribe(job, models, heartbeat):
                     job.status()
             data = {"waveform": torch.from_numpy(audio).unsqueeze(0), "sample_rate": 16000}
             try:
-                out = pipe(data, hook=hook, **kw)
-            except TypeError:
-                out = pipe(data, **kw)
-            ann = getattr(out, "exclusive_speaker_diarization", None) or getattr(out, "speaker_diarization", None) or out
-            turns = sorted((t.start, t.end, spk) for t, _, spk in ann.itertracks(yield_label=True))
-            diarized = bool(turns)
-            log(f"{job.name}: {len(set(t[2] for t in turns))} speakers found ({time.time() - t1:.0f} s)")
+                try:
+                    out = pipe(data, hook=hook, **kw)
+                except TypeError:
+                    out = pipe(data, **kw)
+                turns = speaker_turns(out)
+                diarized = bool(turns)
+                log(f"{job.name}: {len(set(t[2] for t in turns))} speakers found ({time.time() - t1:.0f} s)")
+            except Exception as e:  # speaker detection is a bonus: keep the text without it
+                log(f"{job.name}: speaker detection failed ({e}); saving the text without speakers")
+                turns, diarized = [], False
+            if not turns and not is_memo:
+                turns = [(0.0, duration + 1, "SPEAKER_00")]
     elif not is_memo:
         turns = [(0.0, duration + 1, "SPEAKER_00")]
 
